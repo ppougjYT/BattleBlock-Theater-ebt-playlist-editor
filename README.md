@@ -14,3 +14,5 @@ After the build finishes, the `.exe` will be in:
 ```text
 .\dist\
 ```
+<img width="1919" height="1029" alt="image" src="https://github.com/user-attachments/assets/859ae390-c4b8-43a0-9d7e-c7f2c1a3aea0" />
+<img width="1919" height="1032" alt="image" src="https://github.com/user-attachments/assets/e0b889c1-2ff8-4032-b2c7-98ce3e21fe52" />
