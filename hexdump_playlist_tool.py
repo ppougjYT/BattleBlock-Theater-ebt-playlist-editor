@@ -118,14 +118,36 @@ def export_playlist_bytes(data, output_dir, source_label=None, extra_manifest=No
 
     playlist_name = names[0]
     level_names = names[1:]
-    raw_records, trailer = parse_records(data, records_offset, level_names)
+    parse_error = None
+    try:
+        raw_records, trailer = parse_records(data, records_offset, level_names)
+    except ValueError as exc:
+        parse_error = str(exc)
+        raw_records = []
+        trailer = b""
+
     scanned_levels = scan_level_records(data)
 
     has_broken_sequential_layout = any(
         entry["record_size"] == 0 for entry in raw_records
     )
 
-    if len(scanned_levels) >= len(level_names):
+    if parse_error:
+        raw_records = []
+        for index, entry in enumerate(scanned_levels, start=1):
+            fallback_name = f"Level{index}"
+            raw_records.append(
+                {
+                    "name": fallback_name,
+                    "record_size": entry["record_size"],
+                    "record_flag": entry["record_flag"],
+                    "record_offset": entry["record_offset"],
+                    "record_bytes": build_level_bytes(entry),
+                }
+            )
+        level_names = [entry["name"] for entry in raw_records]
+        trailer = b""
+    elif len(scanned_levels) >= len(level_names):
         raw_records = []
         for index, name in enumerate(level_names):
             entry = scanned_levels[index]
@@ -177,6 +199,8 @@ def export_playlist_bytes(data, output_dir, source_label=None, extra_manifest=No
         manifest["source_hex_file"] = source_label
     if extra_manifest:
         manifest.update(extra_manifest)
+    if parse_error:
+        manifest["sequential_parse_error"] = parse_error
 
     exported_count = 0
     skipped_count = 0
