@@ -15,5 +15,6 @@ After the build finishes, the `.exe` will be in:
 .\dist\
 ```
 <img width="1197" height="758" alt="image" src="https://github.com/user-attachments/assets/abdeeb13-5b6f-465c-b4ea-a306a184e080" />
-<img width="1200" height="759" alt="image" src="https://github.com/user-attachments/assets/48377d84-e0e4-4dff-9fbd-e40268f0b916" />
+<img width="1200" height="758" alt="image" src="https://github.com/user-attachments/assets/3ae5dd66-4f04-4648-86ed-dd29cd4c8a30" />
+
 
