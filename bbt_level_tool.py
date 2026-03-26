@@ -45,11 +45,24 @@ def parse_level_bytes(data):
         )
 
     tile_bytes = list(data[HEADER_SIZE:])
+    if len(tile_bytes) != width * height:
+        raise ValueError(
+            f"File size does not match width/height from header: "
+            f"got {len(data)} bytes, expected {expected_size} for {width}x{height}"
+        )
+
+    # Interpret the last header byte as the first logical tile.
+    first_tile = header[-1]
+    payload_tiles = tile_bytes[:-1]
+    trailing_header_byte = tile_bytes[-1]
+
+    all_tiles = [first_tile] + payload_tiles
+
     rows = []
     for row_index in range(height):
         start = row_index * width
         end = start + width
-        rows.append(tile_bytes[start:end])
+        rows.append(all_tiles[start:end])
 
     return {
         "width": width,
@@ -59,6 +72,7 @@ def parse_level_bytes(data):
         "header_bytes": header,
         "header_hex": [f"{value:02X}" for value in header],
         "tiles": rows,
+        "trailing_payload_byte": trailing_header_byte,
     }
 
 
@@ -85,7 +99,16 @@ def build_level_bytes(level_data):
             raise ValueError(f"Each tile row must contain exactly {width} values")
         flat_tiles.extend(int(value) & 0xFF for value in row)
 
-    return bytes((int(value) & 0xFF) for value in header_bytes + flat_tiles)
+    header_bytes[HEADER_SIZE - 1] = flat_tiles[0]
+    payload_tiles = flat_tiles[1:]
+
+    trailing_byte = level_data.get("trailing_payload_byte")
+    if trailing_byte is None:
+        trailing_byte = flat_tiles[-1]
+
+    payload_bytes = payload_tiles + [int(trailing_byte) & 0xFF]
+
+    return bytes((int(value) & 0xFF) for value in header_bytes + payload_bytes)
 
 
 def export_level(input_path, output_path):
