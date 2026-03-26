@@ -68,6 +68,8 @@ class EbtEditorApp:
         self.level_info_var = tk.StringVar(value="Open an .ebt file to begin.")
         self.status_var = tk.StringVar(value="Ready.")
         self.selected_block_var = tk.StringVar(value="7")
+        self.level_width_var = tk.StringVar(value="0")
+        self.level_height_var = tk.StringVar(value="0")
         self.visual_assets_root = self._detect_visual_assets_root()
         self.visual_assets_var = tk.StringVar(
             value=self.visual_assets_root or "Visual assets not found"
@@ -228,7 +230,7 @@ class EbtEditorApp:
 
         visual_toolbar = ttk.Frame(visual_tab)
         visual_toolbar.grid(row=0, column=0, sticky="ew", pady=(0, 8))
-        visual_toolbar.columnconfigure(5, weight=1)
+        visual_toolbar.columnconfigure(9, weight=1)
 
         ttk.Label(visual_toolbar, text="Block ID").grid(row=0, column=0, sticky="w")
         self.block_spinbox = tk.Spinbox(
@@ -245,16 +247,42 @@ class EbtEditorApp:
         self.block_preview_label = ttk.Label(visual_toolbar, text="No preview", width=18)
         self.block_preview_label.grid(row=0, column=2, padx=(0, 12), sticky="w")
 
+        ttk.Label(visual_toolbar, text="Width").grid(row=0, column=3, sticky="w")
+        self.width_spinbox = tk.Spinbox(
+            visual_toolbar,
+            from_=1,
+            to=255,
+            textvariable=self.level_width_var,
+            width=4,
+        )
+        self.width_spinbox.grid(row=0, column=4, padx=(6, 8), sticky="w")
+
+        ttk.Label(visual_toolbar, text="Height").grid(row=0, column=5, sticky="w")
+        self.height_spinbox = tk.Spinbox(
+            visual_toolbar,
+            from_=1,
+            to=255,
+            textvariable=self.level_height_var,
+            width=4,
+        )
+        self.height_spinbox.grid(row=0, column=6, padx=(6, 8), sticky="w")
+
+        ttk.Button(
+            visual_toolbar,
+            text="Resize Level",
+            command=self.resize_level,
+        ).grid(row=0, column=7, padx=(12, 0))
+
         ttk.Label(
             visual_toolbar,
             text="Left click places selected block. Right click erases.",
-        ).grid(row=0, column=3, sticky="w")
+        ).grid(row=0, column=8, sticky="w")
 
         ttk.Button(
             visual_toolbar,
             text="Apply Hex To Visual",
             command=self.sync_visual_from_hex,
-        ).grid(row=0, column=4, padx=(12, 0))
+        ).grid(row=0, column=9, padx=(12, 0))
 
         visual_frame = ttk.Frame(visual_tab)
         visual_frame.grid(row=1, column=0, sticky="nsew")
@@ -394,6 +422,9 @@ class EbtEditorApp:
         self.current_level_dirty = False
         self.render_visual_level()
 
+        self.level_width_var.set(str(self.current_level_data["width"]))
+        self.level_height_var.set(str(self.current_level_data["height"]))
+
         self.level_info_var.set(
             f"{self.current_level_entry['name']} | "
             f"{self.current_level_data['width']}x{self.current_level_data['height']} | "
@@ -465,12 +496,13 @@ class EbtEditorApp:
         )
 
     def _get_display_row_tiles(self, stored_row):
-        if not stored_row:
-            return stored_row
-        return stored_row[-1:] + stored_row[:-1]
+        # Visual display should map 1:1 to stored row columns.
+        # The previous code shifted by one, causing all levels to appear offset.
+        return stored_row
 
     def _visual_col_to_storage_col(self, visual_col, width):
-        return (visual_col - 1) % width
+        # Store and display use the same column indexing.
+        return visual_col
 
     def update_selected_block_preview(self, event=None):
         try:
@@ -507,21 +539,93 @@ class EbtEditorApp:
             messagebox.showerror("Invalid Level Hex", str(exc))
             return False
 
-        expected_size = int(self.current_level_entry["record_size"])
-        if len(level_bytes) != expected_size:
-            messagebox.showerror(
-                "Wrong Size",
-                f"Level data must stay {expected_size} bytes, but the editor currently has {len(level_bytes)} bytes.",
-            )
-            return False
+        # Update record_size if it changed
+        actual_size = len(level_bytes)
+        self.current_level_entry["record_size"] = actual_size
+        parsed_level["record_size"] = actual_size
 
         parsed_level["name"] = self.current_level_entry["name"]
-        parsed_level["record_size"] = self.current_level_entry["record_size"]
         parsed_level["record_flag"] = self.current_level_entry["record_flag"]
         parsed_level["record_offset"] = self.current_level_entry["record_offset"]
         self.current_level_data = parsed_level
+        self.level_width_var.set(str(parsed_level["width"]))
+        self.level_height_var.set(str(parsed_level["height"]))
         self.render_visual_level()
         return True
+
+    def resize_level(self):
+        if not self.current_level_data or not self.current_level_entry:
+            messagebox.showerror("No Level Loaded", "Load a level first.")
+            return
+
+        try:
+            new_width = int(self.level_width_var.get())
+            new_height = int(self.level_height_var.get())
+        except ValueError:
+            messagebox.showerror("Invalid Dimensions", "Width and height must be positive integers.")
+            return
+
+        if new_width < 1 or new_height < 1 or new_width > 255 or new_height > 255:
+            messagebox.showerror("Invalid Dimensions", "Width and height must be between 1 and 255.")
+            return
+
+        old_width = int(self.current_level_data["width"])
+        old_height = int(self.current_level_data["height"])
+
+        if new_width == old_width and new_height == old_height:
+            return  # No change
+
+        # Adjust tiles
+        old_tiles = self.current_level_data["tiles"]
+        new_tiles = []
+        for row_idx in range(new_height):
+            if row_idx < old_height:
+                old_row = old_tiles[row_idx]
+                if new_width <= old_width:
+                    new_row = old_row[:new_width]
+                else:
+                    new_row = old_row + [0] * (new_width - old_width)
+            else:
+                new_row = [0] * new_width
+            new_tiles.append(new_row)
+
+        # Update level data
+        self.current_level_data["width"] = new_width
+        self.current_level_data["height"] = new_height
+        self.current_level_data["tiles"] = new_tiles
+
+        # Update header
+        width_index = self.current_level_data["width_index"]
+        height_index = self.current_level_data["height_index"]
+        self.current_level_data["header_bytes"][width_index] = new_width
+        self.current_level_data["header_bytes"][height_index] = new_height
+
+        # Update record size
+        new_record_size = 16 + new_width * new_height
+        self.current_level_entry["record_size"] = new_record_size
+        self.current_level_data["record_size"] = new_record_size
+
+        # Save manifest
+        manifest_path = os.path.join(self.current_temp_dir, "manifest.json")
+        with open(manifest_path, "w", encoding="utf-8") as file_obj:
+            json.dump(self.current_manifest, file_obj, indent=2)
+            file_obj.write("\n")
+
+        # Update UI
+        self._sync_hex_from_level_data()
+        self.current_level_dirty = True
+        self.level_width_var.set(str(new_width))
+        self.level_height_var.set(str(new_height))
+        self.render_visual_level()
+
+        self.level_info_var.set(
+            f"{self.current_level_entry['name']} | "
+            f"{new_width}x{new_height} | "
+            f"record size {new_record_size} bytes | "
+            f"flag {self.current_level_entry['record_flag']} | "
+            f"offset {self.current_level_entry['record_offset']}"
+        )
+        self.set_status(f"Resized level to {new_width}x{new_height}.")
 
     def _paint_visual_tile(self, row_index, col_index, block_id):
         if not self.current_level_data:
@@ -593,21 +697,23 @@ class EbtEditorApp:
             messagebox.showerror("Invalid Level Hex", str(exc))
             return False
 
-        expected_size = int(self.current_level_entry["record_size"])
-        if len(level_bytes) != expected_size:
-            messagebox.showerror(
-                "Wrong Size",
-                f"Level data must stay {expected_size} bytes, but the editor currently has {len(level_bytes)} bytes.",
-            )
-            return False
+        # Update record_size in case it changed
+        actual_size = len(level_bytes)
+        self.current_level_entry["record_size"] = actual_size
+        parsed_level["record_size"] = actual_size
 
         parsed_level["name"] = self.current_level_entry["name"]
-        parsed_level["record_size"] = self.current_level_entry["record_size"]
         parsed_level["record_flag"] = self.current_level_entry["record_flag"]
         parsed_level["record_offset"] = self.current_level_entry["record_offset"]
 
         with open(self.current_level_path, "w", encoding="utf-8") as file_obj:
             json.dump(parsed_level, file_obj, indent=2)
+            file_obj.write("\n")
+
+        # Save manifest with updated record_size
+        manifest_path = os.path.join(self.current_temp_dir, "manifest.json")
+        with open(manifest_path, "w", encoding="utf-8") as file_obj:
+            json.dump(self.current_manifest, file_obj, indent=2)
             file_obj.write("\n")
 
         self.current_level_data = parsed_level
@@ -616,7 +722,7 @@ class EbtEditorApp:
         self.level_info_var.set(
             f"{self.current_level_entry['name']} | "
             f"{parsed_level['width']}x{parsed_level['height']} | "
-            f"record size {self.current_level_entry['record_size']} bytes | "
+            f"record size {actual_size} bytes | "
             f"flag {self.current_level_entry['record_flag']} | "
             f"offset {self.current_level_entry['record_offset']}"
         )
